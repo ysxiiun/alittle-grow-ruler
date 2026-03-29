@@ -1,0 +1,61 @@
+{
+  "name": "alittle-grow-ruler",
+  "version": "1.0.0",
+  "description": "ALittle 成长尺 - 记录成长的软件",
+  "main": "dist/server/index.js",
+  "bin": {
+    "grow-ruler": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "dev:client": "vite",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "build:client": "vite build",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build": "npm run build:client && npm run build:server",
+    "preview": "node dist/server/index.js",
+    "cli:start": "node dist/cli/index.js start",
+    "cli:stop": "node dist/cli/index.js stop",
+    "cli:restart": "node dist/cli/index.js restart",
+    "cli:status": "node dist/cli/index.js status",
+    "cli:help": "node dist/cli/index.js help"
+  },
+  "keywords": [
+    "growth",
+    "height",
+    "weight",
+    "tracker",
+    "record"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "antd": "^5.15.0",
+    "antd-mobile": "^5.32.0",
+    "antd-mobile-icons": "^0.3.0",
+    "better-sqlite3": "^11.8.1",
+    "cors": "^2.8.5",
+    "echarts": "^5.5.0",
+    "echarts-for-react": "^3.0.6",
+    "express": "^4.18.3",
+    "multer": "^1.4.5-lts.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.11",
+    "@types/node": "^20.11.25",
+    "@types/react": "^18.2.63",
+    "@types/react-dom": "^18.2.20",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.4.2",
+    "vite": "^5.1.5"
+  }
+}
