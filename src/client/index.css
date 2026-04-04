@@ -106,7 +106,7 @@ body {
 .hero-section {
   text-align: center;
   padding: 48px 24px;
-  background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+  background: linear-gradient(135deg, #10B981 0%, #34D399 100%);
   border-radius: 16px;
   margin-bottom: 32px;
   color: white;
@@ -206,7 +206,7 @@ body {
 .gap-24 { gap: 24px; }
 
 /* ===== 颜色工具类 ===== */
-.text-primary { color: #1677ff; }
+.text-primary { color: #10B981; }
 .text-success { color: #52c41a; }
 .text-warning { color: #faad14; }
 .text-error { color: #f5222d; }
@@ -214,9 +214,28 @@ body {
 .text-muted { color: #999999; }
 
 .bg-white { background-color: #ffffff; }
-.bg-primary { background-color: #1677ff; }
+.bg-primary { background-color: #10B981; }
 .bg-success { background-color: #f6ffed; }
 .bg-warning { background-color: #fffbe6; }
+
+/* ===== 页面头部 ===== */
+.page-header {
+  padding: 16px 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #ffffff;
+  margin-left: -24px;
+  margin-right: -24px;
+  padding-left: 24px;
+  padding-right: 24px;
+  border-radius: 12px 12px 0 0;
+}
+
+@media (max-width: 767px) {
+  .page-header {
+    display: none;
+  }
+}
 
 /* ===== 移动端适配 ===== */
 @media (max-width: 767px) {

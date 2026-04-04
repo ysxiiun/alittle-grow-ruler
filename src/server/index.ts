@@ -6,7 +6,9 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { initializeDatabase, closeDatabase } from './database';
+import { initializeTemplates } from './templates';
 import rulersRouter from './routes/rulers';
+import templatesRouter from './routes/templates';
 import recordsRouter from './routes/records';
 import analysisRouter from './routes/analysis';
 
@@ -19,6 +21,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // API 路由
+app.use('/api/templates', templatesRouter);
 app.use('/api/rulers', rulersRouter);
 app.use('/api/records', recordsRouter);
 app.use('/api/analysis', analysisRouter);
@@ -57,6 +60,10 @@ export function startServer(port: number = Number(PORT)): Promise<void> {
       // 初始化数据库
       initializeDatabase();
       console.log('数据库初始化成功');
+
+      // 初始化内置模板
+      initializeTemplates();
+      console.log('模板初始化成功');
 
       // 启动 HTTP 服务器
       server = app.listen(port, () => {

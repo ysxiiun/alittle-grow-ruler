@@ -11,7 +11,7 @@
     "dev:server": "tsx watch src/server/index.ts",
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
     "build:client": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "node scripts/build-server.mjs",
     "build": "npm run build:client && npm run build:server",
     "preview": "node dist/server/index.js",
     "cli:start": "node dist/cli/index.js start",
@@ -30,11 +30,13 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "antd": "^5.15.0",
     "antd-mobile": "^5.32.0",
     "antd-mobile-icons": "^0.3.0",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.10",
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.6",
     "express": "^4.18.3",
@@ -42,7 +44,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

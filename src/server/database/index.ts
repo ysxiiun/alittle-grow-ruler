@@ -48,7 +48,73 @@ export function closeDatabase(): void {
 export function initializeDatabase(): void {
   const database = getDatabase();
 
-  // 创建记录尺表
+  // 创建模板表
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS templates (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      icon TEXT,
+      fields TEXT,
+      charts TEXT,
+      stats TEXT,
+      import_config TEXT,
+      export_config TEXT,
+      is_builtin INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // 创建记录集表（重构自 record_rulers）
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      template_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      subject TEXT,
+      color TEXT DEFAULT '#10B981',
+      is_deleted INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (template_id) REFERENCES templates(id)
+    )
+  `);
+
+  // 创建数据条目表（重构自 records）
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS data_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id INTEGER NOT NULL,
+      timestamp DATETIME NOT NULL,
+      "values" TEXT,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (record_id) REFERENCES records(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 创建索引
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_records_template_id ON records(template_id);
+    CREATE INDEX IF NOT EXISTS idx_records_is_deleted ON records(is_deleted);
+    CREATE INDEX IF NOT EXISTS idx_data_entries_record_id ON data_entries(record_id);
+    CREATE INDEX IF NOT EXISTS idx_data_entries_timestamp ON data_entries(timestamp);
+  `);
+
+  const templateColumns = database
+    .prepare('PRAGMA table_info(templates)')
+    .all() as Array<{ name: string }>;
+  const templateColumnNames = new Set(templateColumns.map((column) => column.name));
+
+  if (!templateColumnNames.has('import_config')) {
+    database.exec('ALTER TABLE templates ADD COLUMN import_config TEXT');
+  }
+  if (!templateColumnNames.has('export_config')) {
+    database.exec('ALTER TABLE templates ADD COLUMN export_config TEXT');
+  }
+
+  // 兼容旧表（如果存在旧数据）
   database.exec(`
     CREATE TABLE IF NOT EXISTS record_rulers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,9 +126,9 @@ export function initializeDatabase(): void {
     )
   `);
 
-  // 创建记录数据表
+  // 兼容旧 records 表
   database.exec(`
-    CREATE TABLE IF NOT EXISTS records (
+    CREATE TABLE IF NOT EXISTS old_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       ruler_id INTEGER NOT NULL,
       record_date DATE NOT NULL,
@@ -72,11 +138,5 @@ export function initializeDatabase(): void {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (ruler_id) REFERENCES record_rulers(id) ON DELETE CASCADE
     )
-  `);
-
-  // 创建索引
-  database.exec(`
-    CREATE INDEX IF NOT EXISTS idx_records_ruler_id ON records(ruler_id);
-    CREATE INDEX IF NOT EXISTS idx_records_date ON records(record_date);
   `);
 }

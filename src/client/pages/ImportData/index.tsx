@@ -2,12 +2,11 @@
  * 数据导入页面（响应式版本）
  */
 
-import React, { useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card,
   Button,
-  Typography,
   Space,
   Steps,
   Upload,
@@ -15,18 +14,39 @@ import {
   Row,
   Col,
   Alert,
+  Dropdown,
 } from 'antd';
 import {
   ArrowLeftOutlined,
   DownloadOutlined,
-  UploadOutlined,
   FileExcelOutlined,
-  CheckCircleOutlined,
   InboxOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import { useDeviceType } from '../../hooks/useDeviceType';
+import type { MenuProps } from 'antd';
+import request from '../../utils/request';
 
-const { Title, Text, Paragraph } = Typography;
+interface TemplateField {
+  key: string;
+  label: string;
+  type: 'number' | 'string' | 'date' | 'select';
+  unit?: string;
+}
+
+interface Template {
+  id: string;
+  name: string;
+  fields: TemplateField[];
+  icon?: string;
+}
+
+interface RulerInfo {
+  id: number;
+  name: string;
+  template: Template;
+}
+
 const { Dragger } = Upload;
 
 export default function ImportData() {
@@ -35,15 +55,31 @@ export default function ImportData() {
   const { isMobile } = useDeviceType();
   const [uploading, setUploading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [ruler, setRuler] = useState<RulerInfo | null>(null);
 
-  const downloadTemplate = async () => {
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+
+    request<{ data: RulerInfo }>(`/rulers/${id}`)
+      .then((result) => setRuler(result.data))
+      .catch(() => message.error('加载记录尺失败'));
+  }, [id]);
+
+  const downloadTemplate = async (format: 'xlsx' | 'csv') => {
     try {
-      const response = await fetch(`/api/records/import/template`);
+      const response = await fetch(`/api/records/import/template?ruler_id=${id}&format=${format}`);
+      if (!response.ok) {
+        const error = await response.json();
+        message.error(error.message || '下载模板失败');
+        return;
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = '记录模板.xlsx';
+      a.download = `${ruler?.name || '导入模板'}_${ruler?.template.name || '模板'}.${format}`;
       a.click();
       window.URL.revokeObjectURL(url);
       message.success('模板已下载');
@@ -53,12 +89,26 @@ export default function ImportData() {
     }
   };
 
+  const downloadMenuItems: MenuProps['items'] = [
+    {
+      key: 'xlsx',
+      icon: <FileExcelOutlined />,
+      label: 'Excel 格式 (.xlsx)',
+      onClick: () => downloadTemplate('xlsx'),
+    },
+    {
+      key: 'csv',
+      label: 'CSV 格式 (.csv)',
+      onClick: () => downloadTemplate('csv'),
+    },
+  ];
+
   const customRequest = async ({ file }: { file: File }) => {
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('ruler_id', id!);
+      formData.append('record_id', id!);
 
       const response = await fetch('/api/records/import', {
         method: 'POST',
@@ -111,9 +161,9 @@ export default function ImportData() {
             >
               返回
             </Button>
-            <Title level={4} style={{ margin: 0 }}>
+            <span style={{ fontSize: 18, fontWeight: 600 }}>
               数据导入
-            </Title>
+            </span>
           </Space>
         </Card>
 
@@ -133,27 +183,44 @@ export default function ImportData() {
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               {/* 导入说明 */}
               <Card className="app-card-static">
-                <Title level={5}>导入说明</Title>
-                <Paragraph>
-                  通过 Excel 文件批量导入数据，支持以下格式：
-                </Paragraph>
-                <ul style={{ color: '#666', lineHeight: '2' }}>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>导入说明</div>
+                <div style={{ color: '#666', marginBottom: 12 }}>
+                  将数据按当前记录尺所属模板填写后导入，系统会按模板字段解析文件。
+                </div>
+                <ul style={{ color: '#666', lineHeight: '2', marginBottom: 16 }}>
                   <li>Excel 文件 (.xlsx, .xls)</li>
                   <li>CSV 文件 (.csv)</li>
+                  <li>推荐先下载模板文件，再按列头填写</li>
                 </ul>
                 <Alert
                   message="数据格式要求"
                   description={
                     <ul style={{ margin: 0, paddingLeft: 16 }}>
-                      <li>日期格式：YYYY-MM-DD</li>
-                      <li>身高单位：厘米 (cm)</li>
-                      <li>体重单位：公斤 (kg) 或 市斤</li>
+                      <li>时间列格式：YYYY-MM-DD HH:mm</li>
+                      <li>列头格式：字段标签(key)</li>
+                      <li>当前模板：{ruler?.template.name || '加载中'}</li>
                     </ul>
                   }
                   type="info"
                   showIcon
                 />
               </Card>
+
+              {ruler?.template && (
+                <Card className="app-card-static">
+                  <div style={{ fontWeight: 600, marginBottom: 12 }}>
+                    {ruler.template.icon || '📋'} 模板字段
+                  </div>
+                  <ul style={{ color: '#666', lineHeight: '2', margin: 0, paddingLeft: 18 }}>
+                    {ruler.template.fields.map((field) => (
+                      <li key={field.key}>
+                        {field.label} ({field.key})
+                        {field.unit ? `，单位 ${field.unit}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
 
               {/* 下载模板 */}
               <Card className="app-card-static">
@@ -168,21 +235,18 @@ export default function ImportData() {
                     </Space>
                   </Col>
                   <Col>
-                    <Button
-                      type="primary"
-                      icon={<DownloadOutlined />}
-                      onClick={downloadTemplate}
-                      size="large"
-                    >
-                      下载模板
-                    </Button>
+                    <Dropdown menu={{ items: downloadMenuItems }} placement="bottomRight">
+                      <Button type="primary" icon={<DownloadOutlined />}>
+                        下载模板 <DownOutlined />
+                      </Button>
+                    </Dropdown>
                   </Col>
                 </Row>
               </Card>
 
               {/* 文件上传 */}
               <Card className="app-card-static">
-                <Title level={5}>上传文件</Title>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>上传文件</div>
                 <Dragger
                   customRequest={customRequest}
                   accept=".xlsx,.xls,.csv"

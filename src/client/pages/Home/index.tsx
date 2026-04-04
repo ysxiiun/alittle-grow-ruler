@@ -2,7 +2,7 @@
  * 首页 - 记录尺列表页面（响应式版本）
  */
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Button,
@@ -16,9 +16,7 @@ import {
   message,
   Row,
   Col,
-  Statistic,
   Space,
-  Badge,
 } from 'antd';
 import {
   PlusOutlined,
@@ -26,9 +24,6 @@ import {
   DeleteOutlined,
   MoreOutlined,
   SearchOutlined,
-  LineChartOutlined,
-  CalendarOutlined,
-  RiseOutlined,
 } from '@ant-design/icons';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import request from '../../utils/request';
@@ -38,10 +33,18 @@ interface RecordRuler {
   id: number;
   name: string;
   description: string;
-  template_type: string;
+  template_id: string;
+  subject?: string;
+  color?: string;
   created_at: string;
   updated_at: string;
   record_count?: number;
+  last_time?: string;
+}
+
+interface Template {
+  id: string;
+  name: string;
 }
 
 interface Stats {
@@ -50,24 +53,11 @@ interface Stats {
   recentRecords: number;
 }
 
-const templateOptions = [
-  { value: '', label: '全部模板' },
-  { value: 'height_weight', label: '身高体重' },
-];
-
 const sortOptions = [
   { value: 'updated_desc', label: '最近更新' },
   { value: 'created_desc', label: '最新创建' },
   { value: 'name_asc', label: '名称排序' },
 ];
-
-const templateNames: Record<string, string> = {
-  height_weight: '身高体重',
-};
-
-const templateColors: Record<string, string> = {
-  height_weight: 'blue',
-};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -77,55 +67,51 @@ export default function Home() {
   const [stats, setStats] = useState<Stats>({ totalRulers: 0, totalRecords: 0, recentRecords: 0 });
   const [searchText, setSearchText] = useState('');
   const [templateFilter, setTemplateFilter] = useState<string>('');
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [sortBy, setSortBy] = useState<string>('updated_desc');
-  const [loading, setLoading] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [selectedRuler, setSelectedRuler] = useState<RecordRuler | null>(null);
 
+  const templateOptions = [
+    { value: '', label: '全部' },
+    ...templates.map((template) => ({
+      value: template.id,
+      label: template.name,
+    })),
+  ];
+
+  const templateNames = templates.reduce<Record<string, string>>((acc, template) => {
+    acc[template.id] = template.name;
+    return acc;
+  }, {});
+
   const fetchRulers = async () => {
-    setLoading(true);
     try {
       const params = new URLSearchParams();
       if (searchText) {
         params.set('search', searchText);
       }
       if (templateFilter) {
-        params.set('template_type', templateFilter);
+        params.set('template_id', templateFilter);
       }
 
       const url = `/rulers${params.toString() ? `?${params.toString()}` : ''}`;
       const result = await request<{ data: RecordRuler[] }>(url);
 
-      // 获取每个记录尺的记录数
-      const rulersWithCount = await Promise.all(
-        result.data.map(async (ruler) => {
-          try {
-            const recordsResult = await request<{ data: { total: number } }>(
-              `/records?ruler_id=${ruler.id}&page=1&pageSize=1`
-            );
-            return { ...ruler, record_count: recordsResult.data.total };
-          } catch {
-            return { ...ruler, record_count: 0 };
-          }
-        })
-      );
-
-      setRulers(rulersWithCount);
-      filterAndSortRulers(rulersWithCount);
+      setRulers(result.data);
+      filterAndSortRulers(result.data);
 
       // 计算统计数据
-      const totalRecords = rulersWithCount.reduce((sum, r) => sum + (r.record_count || 0), 0);
+      const totalRecords = result.data.reduce((sum, r) => sum + (r.record_count || 0), 0);
       setStats({
-        totalRulers: rulersWithCount.length,
+        totalRulers: result.data.length,
         totalRecords,
-        recentRecords: rulersWithCount.filter(
+        recentRecords: result.data.filter(
           (r) => new Date(r.updated_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         ).length,
       });
     } catch (error) {
       message.error('加载失败');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -149,6 +135,10 @@ export default function Home() {
   };
 
   useEffect(() => {
+    request<{ data: Template[] }>('/templates')
+      .then((result) => setTemplates(result.data))
+      .catch(() => message.error('加载模板失败'));
+
     fetchRulers();
   }, []);
 
@@ -175,23 +165,119 @@ export default function Home() {
     setDeleteModalVisible(true);
   };
 
-  const getActionItems = (ruler: RecordRuler): MenuProps['items'] => [
+  const stopEventPropagation = (
+    event:
+      | React.MouseEvent<HTMLElement>
+      | React.TouchEvent<HTMLElement>
+      | React.PointerEvent<HTMLElement>
+      | Event
+  ) => {
+    event.stopPropagation();
+  };
+
+  const handleActionMenuClick = (
+    ruler: RecordRuler,
+    info: { key: string; domEvent: Event }
+  ) => {
+    info.domEvent.stopPropagation();
+
+    if (info.key === 'edit') {
+      navigate(`/ruler/${ruler.id}/edit`);
+      return;
+    }
+
+    if (info.key === 'delete') {
+      showDeleteModal(ruler);
+    }
+  };
+
+  const getActionItems = (): MenuProps['items'] => [
     {
       key: 'edit',
       icon: <EditOutlined />,
       label: '编辑',
-      onClick: () => navigate(`/ruler/${ruler.id}/edit`),
     },
     {
       key: 'delete',
       icon: <DeleteOutlined />,
       label: '删除',
       danger: true,
-      onClick: () => showDeleteModal(ruler),
     },
   ];
 
-  // Hero 区域
+  // 移动端紧凑头部
+  const renderMobileHeader = () => (
+    <Card className="app-card-static mb-16" bodyStyle={{ padding: '16px' }}>
+      {/* 标题行 */}
+      <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <span style={{ fontSize: 18, fontWeight: 600 }}>📏 ALittle 成长尺</span>
+        </Col>
+        <Col>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/ruler/new')}>
+            新建
+          </Button>
+        </Col>
+      </Row>
+
+      {/* 统计行 */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <div style={{ textAlign: 'center', padding: '8px 0', background: '#f6ffed', borderRadius: 8 }}>
+            <div style={{ fontSize: 22, fontWeight: 600, color: '#10B981' }}>{stats.totalRulers}</div>
+            <div style={{ fontSize: 12, color: '#666' }}>记录尺</div>
+          </div>
+        </Col>
+        <Col span={8}>
+          <div style={{ textAlign: 'center', padding: '8px 0', background: '#e6f7ff', borderRadius: 8 }}>
+            <div style={{ fontSize: 22, fontWeight: 600, color: '#1677ff' }}>{stats.totalRecords}</div>
+            <div style={{ fontSize: 12, color: '#666' }}>记录数</div>
+          </div>
+        </Col>
+        <Col span={8}>
+          <div style={{ textAlign: 'center', padding: '8px 0', background: '#fffbe6', borderRadius: 8 }}>
+            <div style={{ fontSize: 22, fontWeight: 600, color: '#faad14' }}>{stats.recentRecords}</div>
+            <div style={{ fontSize: 12, color: '#666' }}>本周更新</div>
+          </div>
+        </Col>
+      </Row>
+
+      {/* 搜索筛选行 */}
+      <Row gutter={[8, 12]} align="middle">
+        <Col span={24}>
+          <Input
+            placeholder="搜索记录尺"
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            onPressEnter={fetchRulers}
+            allowClear
+          />
+        </Col>
+        <Col span={12}>
+          <Select
+            value={templateFilter}
+            onChange={(value) => {
+              setTemplateFilter(value);
+              fetchRulers();
+            }}
+            options={templateOptions}
+            style={{ width: '100%' }}
+          />
+        </Col>
+        <Col span={12}>
+          <Select
+            value={sortBy}
+            onChange={setSortBy}
+            options={sortOptions}
+            style={{ width: '100%' }}
+          />
+        </Col>
+      </Row>
+    </Card>
+  );
+
+  // PC端 Hero 区域
   const renderHero = () => (
     <div className="hero-section">
       <div className="hero-title">ALittle 成长尺</div>
@@ -199,83 +285,90 @@ export default function Home() {
     </div>
   );
 
-  // 统计卡片
+  // PC端 统计卡片
   const renderStats = () => (
     <Row gutter={[16, 16]} className="mb-24">
       <Col xs={24} sm={12} md={8}>
         <Card className="app-card-static">
-          <Statistic
-            title="记录尺数量"
-            value={stats.totalRulers}
-            prefix={<LineChartOutlined className="text-primary" />}
-            valueStyle={{ color: '#1677ff', fontWeight: 600 }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 32, color: '#10B981' }}>📊</div>
+            <div>
+              <div style={{ fontSize: 12, color: '#999' }}>记录尺数量</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: '#10B981' }}>{stats.totalRulers}</div>
+            </div>
+          </div>
         </Card>
       </Col>
       <Col xs={24} sm={12} md={8}>
         <Card className="app-card-static">
-          <Statistic
-            title="总记录数"
-            value={stats.totalRecords}
-            prefix={<CalendarOutlined className="text-success" />}
-            valueStyle={{ color: '#52c41a', fontWeight: 600 }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 32, color: '#1677ff' }}>📋</div>
+            <div>
+              <div style={{ fontSize: 12, color: '#999' }}>总记录数</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: '#1677ff' }}>{stats.totalRecords}</div>
+            </div>
+          </div>
         </Card>
       </Col>
       <Col xs={24} sm={12} md={8}>
         <Card className="app-card-static">
-          <Statistic
-            title="本周更新"
-            value={stats.recentRecords}
-            prefix={<RiseOutlined className="text-warning" />}
-            valueStyle={{ color: '#faad14', fontWeight: 600 }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 32, color: '#faad14' }}>📈</div>
+            <div>
+              <div style={{ fontSize: 12, color: '#999' }}>本周更新</div>
+              <div style={{ fontSize: 24, fontWeight: 600, color: '#faad14' }}>{stats.recentRecords}</div>
+            </div>
+          </div>
         </Card>
       </Col>
     </Row>
   );
 
-  // 筛选栏
+  // PC端 筛选栏
   const renderFilterBar = () => (
     <Card className="app-card-static mb-16">
-      <Space direction={isMobile ? 'vertical' : 'horizontal'} style={{ width: '100%' }} size="middle">
-        <Input
-          placeholder="搜索记录尺名称或描述"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onPressEnter={fetchRulers}
-          prefix={<SearchOutlined />}
-          style={{ width: isMobile ? '100%' : 280 }}
-          allowClear
-        />
-        <Space>
-          <Select
-            placeholder="模板筛选"
-            value={templateFilter}
-            onChange={(value) => {
-              setTemplateFilter(value);
-              fetchRulers();
-            }}
-            options={templateOptions}
-            style={{ width: 140 }}
-          />
-          <Select
-            placeholder="排序方式"
-            value={sortBy}
-            onChange={setSortBy}
-            options={sortOptions}
-            style={{ width: 140 }}
-          />
-        </Space>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => navigate('/ruler/new')}
-          style={{ marginLeft: isMobile ? 0 : 'auto' }}
-        >
-          新建记录尺
-        </Button>
-      </Space>
+      <Row justify="space-between" align="middle" gutter={16}>
+        <Col flex="auto">
+          <Space size="middle">
+            <Input
+              placeholder="搜索记录尺名称或描述"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onPressEnter={fetchRulers}
+              prefix={<SearchOutlined />}
+              style={{ width: 280 }}
+              allowClear
+            />
+            <Select
+              placeholder="模板筛选"
+              value={templateFilter}
+              onChange={(value) => {
+                setTemplateFilter(value);
+                fetchRulers();
+              }}
+              options={templateOptions}
+              style={{ width: 140 }}
+            />
+            <Select
+              placeholder="排序方式"
+              value={sortBy}
+              onChange={setSortBy}
+              options={sortOptions}
+              style={{ width: 140 }}
+            />
+          </Space>
+        </Col>
+        <Col>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => navigate('/ruler/new')}
+            size="large"
+          >
+            新建记录尺
+          </Button>
+        </Col>
+      </Row>
     </Card>
   );
 
@@ -285,15 +378,21 @@ export default function Home() {
       key={ruler.id}
       className="app-card"
       hoverable
-      onClick={() => navigate(`/ruler/${ruler.id}`)}
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (target.closest('.ruler-card-actions')) {
+          return;
+        }
+        navigate(`/ruler/${ruler.id}`);
+      }}
       style={{ cursor: 'pointer', position: 'relative' }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div style={{ flex: 1 }}>
           <Space align="center" style={{ marginBottom: 8 }}>
             <span className="text-heading">{ruler.name}</span>
-            <Tag color={templateColors[ruler.template_type] || 'default'}>
-              {templateNames[ruler.template_type] || ruler.template_type}
+            <Tag color="default">
+              {templateNames[ruler.template_id] || ruler.template_id}
             </Tag>
           </Space>
           <div className="text-body" style={{ marginBottom: 12 }}>
@@ -305,17 +404,29 @@ export default function Home() {
             <span>更新于: {new Date(ruler.updated_at).toLocaleDateString('zh-CN')}</span>
           </Space>
         </div>
-        <Dropdown
-          menu={{ items: getActionItems(ruler) }}
-          placement="bottomRight"
-          trigger={['click']}
+        <div
+          className="ruler-card-actions"
+          onClick={stopEventPropagation}
+          onMouseDown={stopEventPropagation}
+          onTouchStart={stopEventPropagation}
         >
-          <Button
-            type="text"
-            icon={<MoreOutlined />}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </Dropdown>
+          <Dropdown
+            menu={{
+              items: getActionItems(),
+              onClick: (info) => handleActionMenuClick(ruler, info),
+            }}
+            placement="bottomRight"
+            trigger={['click']}
+          >
+            <Button
+              type="text"
+              icon={<MoreOutlined />}
+              onClick={stopEventPropagation}
+              onMouseDown={stopEventPropagation}
+              onTouchStart={stopEventPropagation}
+            />
+          </Dropdown>
+        </div>
       </div>
     </Card>
   );
@@ -342,10 +453,15 @@ export default function Home() {
   return (
     <div className="app-container">
       <div className="content-wrapper">
-        {renderHero()}
-        {renderStats()}
-        {renderFilterBar()}
+        {/* 移动端紧凑头部 */}
+        {isMobile && renderMobileHeader()}
 
+        {/* PC端原有布局 */}
+        {!isMobile && renderHero()}
+        {!isMobile && renderStats()}
+        {!isMobile && renderFilterBar()}
+
+        {/* 记录尺列表 */}
         {filteredRulers.length === 0 ? (
           renderEmpty()
         ) : (
