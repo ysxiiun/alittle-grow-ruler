@@ -80,6 +80,7 @@ interface DataEntry {
   id: number;
   record_id: number;
   timestamp: string;
+  data_date?: string;
   values: Record<string, number | string | null>;
   note?: string;
 }
@@ -336,14 +337,29 @@ export default function RulerDetail() {
   const getTableColumns = () => {
     const columns: any[] = [
       {
-        title: '时间',
-        dataIndex: 'timestamp',
-        key: 'timestamp',
-        render: (timestamp: string) => dayjs(timestamp).format('YYYY-MM-DD HH:mm'),
+        title: template?.id === 'pregnancy-weight' ? '数据日期' : '时间',
+        dataIndex: template?.id === 'pregnancy-weight' ? 'data_date' : 'timestamp',
+        key: template?.id === 'pregnancy-weight' ? 'data_date' : 'timestamp',
+        render: (_: string, row: DataEntry) => (
+          template?.id === 'pregnancy-weight'
+            ? (row.data_date || dayjs(row.timestamp).format('YYYY-MM-DD'))
+            : dayjs(row.timestamp).format('YYYY-MM-DD HH:mm:ss')
+        ),
         sorter: (a: DataEntry, b: DataEntry) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          template?.id === 'pregnancy-weight'
+            ? (a.data_date || a.timestamp.slice(0, 10)).localeCompare(b.data_date || b.timestamp.slice(0, 10))
+            : new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       },
     ];
+
+    if (template?.id === 'pregnancy-weight') {
+      columns.push({
+        title: '记录时间',
+        dataIndex: 'timestamp',
+        key: 'timestamp',
+        render: (timestamp: string) => dayjs(timestamp).format('YYYY-MM-DD HH:mm:ss'),
+      });
+    }
 
     if (template) {
       for (const field of template.fields) {

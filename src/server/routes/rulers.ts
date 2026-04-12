@@ -7,8 +7,43 @@ import { Router, Request, Response } from 'express';
 import * as recordsDao from '../database/records';
 import * as dataEntriesDao from '../database/dataEntries';
 import { getTemplateById } from '../templates';
+import dayjs from 'dayjs';
 
 const router = Router();
+
+function resolvePregnancyDataDate(
+  timestamp: string,
+  values: Record<string, unknown>,
+  inputDataDate?: string
+): string {
+  if (inputDataDate) {
+    return inputDataDate;
+  }
+
+  const recordTime = dayjs(timestamp);
+  if (!recordTime.isValid()) {
+    return timestamp.slice(0, 10);
+  }
+
+  if (values.weight_period === 'night' && recordTime.hour() >= 0 && recordTime.hour() < 3) {
+    return recordTime.subtract(1, 'day').format('YYYY-MM-DD');
+  }
+
+  return recordTime.format('YYYY-MM-DD');
+}
+
+function resolveEntryDataDate(
+  templateId: string,
+  timestamp: string,
+  values: Record<string, unknown>,
+  inputDataDate?: string
+): string {
+  if (templateId === 'pregnancy-weight') {
+    return resolvePregnancyDataDate(timestamp, values, inputDataDate);
+  }
+
+  return inputDataDate || dayjs(timestamp).format('YYYY-MM-DD');
+}
 
 /**
  * GET /api/rulers
@@ -215,7 +250,7 @@ router.post('/:id/data', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, message: '记录集不存在' });
     }
 
-    const { timestamp, values, note } = req.body;
+    const { timestamp, data_date, values, note } = req.body;
     if (!timestamp) {
       return res.status(400).json({ success: false, message: '时间不能为空' });
     }
@@ -223,6 +258,7 @@ router.post('/:id/data', (req: Request, res: Response) => {
     const entry = dataEntriesDao.create({
       record_id: id,
       timestamp,
+      data_date: resolveEntryDataDate(record.template_id, timestamp, values || {}, data_date),
       values: values || {},
       note,
     });
@@ -245,8 +281,27 @@ router.put('/:id/data/:dataId', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '无效的数据 ID' });
     }
 
-    const { timestamp, values, note } = req.body;
-    const updated = dataEntriesDao.update(dataId, { timestamp, values, note });
+    const { timestamp, data_date, values, note } = req.body;
+    const existing = dataEntriesDao.findById(dataId);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: '数据不存在' });
+    }
+
+    const record = recordsDao.findById(existing.record_id);
+    if (!record) {
+      return res.status(404).json({ success: false, message: '记录集不存在' });
+    }
+
+    const nextTimestamp = timestamp || existing.timestamp;
+    const nextValues = values !== undefined
+      ? { ...existing.values, ...(values as Record<string, unknown>) }
+      : existing.values;
+    const updated = dataEntriesDao.update(dataId, {
+      timestamp,
+      data_date: resolveEntryDataDate(record.template_id, nextTimestamp, nextValues, data_date),
+      values,
+      note,
+    });
 
     if (!updated) {
       return res.status(404).json({ success: false, message: '数据不存在' });

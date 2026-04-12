@@ -71,7 +71,7 @@ function getGenericTrendData(record_id: number, field: string): DataPoint[] {
 
   const stmt = db.prepare(`
     SELECT
-      strftime('%Y-%m-%d', timestamp) as day,
+      COALESCE(data_date, strftime('%Y-%m-%d', timestamp)) as day,
       AVG(json_extract("values", '$.${field}')) as avg_value
     FROM data_entries
     WHERE record_id = ? AND json_extract("values", '$.${field}') IS NOT NULL
@@ -93,12 +93,13 @@ function getGenericTrendData(record_id: number, field: string): DataPoint[] {
 function getPregnancyDailyMetrics(record_id: number): PregnancyDayMetric[] {
   const db = getDatabase();
   const rows = db.prepare(`
-    SELECT timestamp, "values"
+    SELECT timestamp, COALESCE(data_date, strftime('%Y-%m-%d', timestamp)) as data_date, "values"
     FROM data_entries
     WHERE record_id = ?
-    ORDER BY timestamp ASC, created_at ASC
+    ORDER BY COALESCE(data_date, strftime('%Y-%m-%d', timestamp)) ASC, timestamp ASC, created_at ASC
   `).all(record_id) as Array<{
     timestamp: string;
+    data_date: string;
     values: string;
   }>;
 
@@ -112,7 +113,7 @@ function getPregnancyDailyMetrics(record_id: number): PregnancyDayMetric[] {
       continue;
     }
 
-    const day = dayjs(row.timestamp).format('YYYY-MM-DD');
+    const day = row.data_date;
     const bucket = dayMap.get(day) || { morning: [], night: [] };
     bucket[period].push(weight);
     dayMap.set(day, bucket);

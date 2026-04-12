@@ -7,6 +7,7 @@ import type {
 } from '../database/templates';
 import type { DataEntry } from '../database/dataEntries';
 import * as XLSX from 'xlsx';
+import dayjs from 'dayjs';
 
 type ImportRow = Record<string, unknown>;
 
@@ -131,6 +132,28 @@ function normalizeTimestamp(value: unknown): string {
   return String(value).trim();
 }
 
+function resolveImportedDataDate(
+  template: Template,
+  timestamp: string,
+  values: Record<string, number | string | null>
+): string {
+  const recordTime = dayjs(timestamp);
+  if (!recordTime.isValid()) {
+    return timestamp.slice(0, 10);
+  }
+
+  if (
+    template.id === 'pregnancy-weight' &&
+    values.weight_period === 'night' &&
+    recordTime.hour() >= 0 &&
+    recordTime.hour() < 3
+  ) {
+    return recordTime.subtract(1, 'day').format('YYYY-MM-DD');
+  }
+
+  return recordTime.format('YYYY-MM-DD');
+}
+
 function parseFieldValue(field: TemplateField | undefined, value: unknown): ParsedFieldValue {
   if (value === null || value === undefined) {
     return { value: null };
@@ -241,6 +264,7 @@ export function parseImportedRows(
     entries.push({
       record_id: recordId,
       timestamp,
+      data_date: resolveImportedDataDate(normalizedTemplate, timestamp, values),
       values,
       note: noteValue ? String(noteValue).trim() : null,
     });

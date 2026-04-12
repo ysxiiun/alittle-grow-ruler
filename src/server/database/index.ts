@@ -87,6 +87,7 @@ export function initializeDatabase(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       record_id INTEGER NOT NULL,
       timestamp DATETIME NOT NULL,
+      data_date DATE,
       "values" TEXT,
       note TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -100,6 +101,7 @@ export function initializeDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_records_is_deleted ON records(is_deleted);
     CREATE INDEX IF NOT EXISTS idx_data_entries_record_id ON data_entries(record_id);
     CREATE INDEX IF NOT EXISTS idx_data_entries_timestamp ON data_entries(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_data_entries_data_date ON data_entries(data_date);
   `);
 
   const templateColumns = database
@@ -112,6 +114,20 @@ export function initializeDatabase(): void {
   }
   if (!templateColumnNames.has('export_config')) {
     database.exec('ALTER TABLE templates ADD COLUMN export_config TEXT');
+  }
+
+  const dataEntryColumns = database
+    .prepare('PRAGMA table_info(data_entries)')
+    .all() as Array<{ name: string }>;
+  const dataEntryColumnNames = new Set(dataEntryColumns.map((column) => column.name));
+
+  if (!dataEntryColumnNames.has('data_date')) {
+    database.exec('ALTER TABLE data_entries ADD COLUMN data_date DATE');
+    database.exec(`
+      UPDATE data_entries
+      SET data_date = substr(timestamp, 1, 10)
+      WHERE data_date IS NULL
+    `);
   }
 
   // 兼容旧表（如果存在旧数据）

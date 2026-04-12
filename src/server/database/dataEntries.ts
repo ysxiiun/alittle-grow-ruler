@@ -9,6 +9,7 @@ export interface DataEntry {
   id?: number;
   record_id: number;
   timestamp: string;
+  data_date?: string | null;
   values: Record<string, number | string | null>;
   note?: string | null;
   created_at?: string;
@@ -38,15 +39,15 @@ export function findAll(options: {
   const countParams: (number | string)[] = [options.record_id];
 
   if (options.start_date) {
-    countQuery += ' AND timestamp >= ?';
-    dataQuery += ' AND timestamp >= ?';
+    countQuery += " AND COALESCE(data_date, substr(timestamp, 1, 10)) >= ?";
+    dataQuery += " AND COALESCE(data_date, substr(timestamp, 1, 10)) >= ?";
     params.push(options.start_date);
     countParams.push(options.start_date);
   }
 
   if (options.end_date) {
-    countQuery += ' AND timestamp <= ?';
-    dataQuery += ' AND timestamp <= ?';
+    countQuery += " AND COALESCE(data_date, substr(timestamp, 1, 10)) <= ?";
+    dataQuery += " AND COALESCE(data_date, substr(timestamp, 1, 10)) <= ?";
     params.push(options.end_date);
     countParams.push(options.end_date);
   }
@@ -56,12 +57,13 @@ export function findAll(options: {
   const { count } = countStmt.get(...countParams) as { count: number };
 
   // 获取分页数据
-  dataQuery += ' ORDER BY timestamp DESC, created_at DESC LIMIT ? OFFSET ?';
+  dataQuery += ' ORDER BY COALESCE(data_date, substr(timestamp, 1, 10)) DESC, timestamp DESC, created_at DESC LIMIT ? OFFSET ?';
   const dataStmt = db.prepare(dataQuery);
   const rows = dataStmt.all(...params, pageSize, offset) as Array<{
     id: number;
     record_id: number;
     timestamp: string;
+    data_date: string | null;
     values: string;
     note: string | null;
     created_at: string;
@@ -71,6 +73,7 @@ export function findAll(options: {
     id: row.id,
     record_id: row.record_id,
     timestamp: row.timestamp,
+    data_date: row.data_date || row.timestamp.slice(0, 10),
     values: JSON.parse(row.values || '{}'),
     note: row.note,
     created_at: row.created_at,
@@ -89,6 +92,7 @@ export function findById(id: number): DataEntry | undefined {
     id: number;
     record_id: number;
     timestamp: string;
+    data_date: string | null;
     values: string;
     note: string | null;
     created_at: string;
@@ -100,6 +104,7 @@ export function findById(id: number): DataEntry | undefined {
     id: row.id,
     record_id: row.record_id,
     timestamp: row.timestamp,
+    data_date: row.data_date || row.timestamp.slice(0, 10),
     values: JSON.parse(row.values || '{}'),
     note: row.note,
     created_at: row.created_at,
@@ -112,12 +117,13 @@ export function findById(id: number): DataEntry | undefined {
 export function create(entry: DataEntry): DataEntry {
   const db = getDatabase();
   const stmt = db.prepare(`
-    INSERT INTO data_entries (record_id, timestamp, "values", note)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO data_entries (record_id, timestamp, data_date, "values", note)
+    VALUES (?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     entry.record_id,
     entry.timestamp,
+    entry.data_date || entry.timestamp.slice(0, 10),
     JSON.stringify(entry.values),
     entry.note || null
   );
@@ -147,6 +153,10 @@ export function update(id: number, entry: Partial<DataEntry>): DataEntry | undef
   if (entry.timestamp !== undefined) {
     fields.push('timestamp = ?');
     values.push(entry.timestamp);
+  }
+  if (entry.data_date !== undefined) {
+    fields.push('data_date = ?');
+    values.push(entry.data_date);
   }
   if (entry.values !== undefined) {
     fields.push('"values" = ?');
@@ -204,8 +214,8 @@ export function createBatch(entries: DataEntry[]): number {
   const db = getDatabase();
 
   const stmt = db.prepare(`
-    INSERT INTO data_entries (record_id, timestamp, "values", note)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO data_entries (record_id, timestamp, data_date, "values", note)
+    VALUES (?, ?, ?, ?, ?)
   `);
 
   const insertMany = db.transaction((items: DataEntry[]) => {
@@ -213,6 +223,7 @@ export function createBatch(entries: DataEntry[]): number {
       stmt.run(
         item.record_id,
         item.timestamp,
+        item.data_date || item.timestamp.slice(0, 10),
         JSON.stringify(item.values),
         item.note || null
       );
@@ -235,22 +246,25 @@ export function createBatch(entries: DataEntry[]): number {
 /**
  * 获取指定字段的所有值（用于统计分析）
  */
-export function getFieldValues(record_id: number, field: string): Array<{ timestamp: string; value: number | null }> {
+export function getFieldValues(
+  record_id: number,
+  field: string
+): Array<{ timestamp: string; value: number | null }> {
   const db = getDatabase();
   const stmt = db.prepare(`
-    SELECT timestamp, "values" FROM data_entries
+    SELECT COALESCE(data_date, substr(timestamp, 1, 10)) as data_date, "values" FROM data_entries
     WHERE record_id = ?
-    ORDER BY timestamp ASC
+    ORDER BY COALESCE(data_date, substr(timestamp, 1, 10)) ASC, timestamp ASC
   `);
   const rows = stmt.all(record_id) as Array<{
-    timestamp: string;
+    data_date: string;
     values: string;
   }>;
 
   return rows.map(row => {
     const values = JSON.parse(row.values || '{}');
     return {
-      timestamp: row.timestamp,
+      timestamp: row.data_date,
       value: values[field] !== undefined ? (values[field] as number) : null,
     };
   }).filter(item => item.value !== null);

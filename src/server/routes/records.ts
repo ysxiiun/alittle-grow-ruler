@@ -16,6 +16,7 @@ import {
   parseImportedRows,
 } from '../templates/io';
 import type { Template } from '../database/templates';
+import dayjs from 'dayjs';
 
 const router = Router();
 
@@ -38,6 +39,40 @@ function validateEntryValues(template: Template, values: Record<string, unknown>
   }
 
   return null;
+}
+
+function resolvePregnancyDataDate(
+  timestamp: string,
+  values: Record<string, unknown>,
+  inputDataDate?: string
+): string {
+  if (inputDataDate) {
+    return inputDataDate;
+  }
+
+  const recordTime = dayjs(timestamp);
+  if (!recordTime.isValid()) {
+    return timestamp.slice(0, 10);
+  }
+
+  if (values.weight_period === 'night' && recordTime.hour() >= 0 && recordTime.hour() < 3) {
+    return recordTime.subtract(1, 'day').format('YYYY-MM-DD');
+  }
+
+  return recordTime.format('YYYY-MM-DD');
+}
+
+function resolveEntryDataDate(
+  template: Template,
+  timestamp: string,
+  values: Record<string, unknown>,
+  inputDataDate?: string
+): string {
+  if (template.id === 'pregnancy-weight') {
+    return resolvePregnancyDataDate(timestamp, values, inputDataDate);
+  }
+
+  return inputDataDate || dayjs(timestamp).format('YYYY-MM-DD');
 }
 
 // 配置 multer 用于文件上传
@@ -132,7 +167,7 @@ router.get('/:id', (req: Request, res: Response) => {
  */
 router.post('/', (req: Request, res: Response) => {
   try {
-    const { record_id, ruler_id, timestamp, values, note } = req.body;
+    const { record_id, ruler_id, timestamp, data_date, values, note } = req.body;
     const recordId = record_id || ruler_id;
 
     if (!recordId || !timestamp) {
@@ -158,6 +193,7 @@ router.post('/', (req: Request, res: Response) => {
     const entry = dataEntriesDao.create({
       record_id: parseInt(recordId as string),
       timestamp,
+      data_date: resolveEntryDataDate(template, timestamp, values || {}, data_date),
       values: values || {},
       note,
     });
@@ -180,7 +216,7 @@ router.put('/:id', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: '无效的 ID' });
     }
 
-    const { timestamp, values, note } = req.body;
+    const { timestamp, data_date, values, note } = req.body;
     const existing = dataEntriesDao.findById(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: '记录不存在' });
@@ -204,7 +240,12 @@ router.put('/:id', (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: validationError });
     }
 
-    const updated = dataEntriesDao.update(id, { timestamp, values, note });
+    const nextTimestamp = timestamp || existing.timestamp;
+    const nextValues = values !== undefined
+      ? { ...existing.values, ...(values as Record<string, unknown>) }
+      : existing.values;
+    const resolvedDataDate = resolveEntryDataDate(template, nextTimestamp, nextValues, data_date);
+    const updated = dataEntriesDao.update(id, { timestamp, data_date: resolvedDataDate, values, note });
 
     if (!updated) {
       return res.status(404).json({ success: false, message: '记录不存在' });

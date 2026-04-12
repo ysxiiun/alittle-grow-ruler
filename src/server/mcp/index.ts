@@ -111,13 +111,15 @@ server.tool(
     record_id: z.number().describe('记录集 ID'),
     values: z.record(z.union([z.number(), z.string(), z.null()])).describe('数据值'),
     timestamp: z.string().optional().describe('记录时间，ISO 格式，默认当前时间'),
+    data_date: z.string().optional().describe('数据日期，YYYY-MM-DD，默认按模板规则推导'),
     note: z.string().optional().describe('备注信息'),
   },
-  async ({ record_id, values, timestamp, note }) => {
+  async ({ record_id, values, timestamp, data_date, note }) => {
     try {
       const entry = dataEntriesDao.create({
         record_id,
         timestamp: timestamp || new Date().toISOString(),
+        data_date,
         values,
         note,
       });
@@ -170,11 +172,12 @@ server.tool(
     data_id: z.number().describe('数据记录 ID'),
     values: z.record(z.union([z.number(), z.string(), z.null()])).optional().describe('新的数据值'),
     timestamp: z.string().optional().describe('新的记录时间'),
+    data_date: z.string().optional().describe('新的数据日期'),
     note: z.string().optional().describe('新的备注'),
   },
-  async ({ data_id, values, timestamp, note }) => {
+  async ({ data_id, values, timestamp, data_date, note }) => {
     try {
-      const updated = dataEntriesDao.update(data_id, { values, timestamp, note });
+      const updated = dataEntriesDao.update(data_id, { values, timestamp, data_date, note });
       if (!updated) {
         return {
           content: [{ type: 'text', text: JSON.stringify({ success: false, error: '数据不存在' }) }],

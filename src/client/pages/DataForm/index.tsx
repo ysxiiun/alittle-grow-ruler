@@ -52,6 +52,7 @@ interface DataEntry {
   id: number;
   record_id: number;
   timestamp: string;
+  data_date?: string;
   values: Record<string, number | string | null>;
   note?: string;
 }
@@ -66,12 +67,17 @@ export default function DataForm() {
   const [ruler, setRuler] = useState<RulerInfo | null>(null);
   const [template, setTemplate] = useState<Template | null>(null);
   const [weightPeriodTouched, setWeightPeriodTouched] = useState(Boolean(dataId));
+  const [dataDateTouched, setDataDateTouched] = useState(Boolean(dataId));
   const autoSettingWeightPeriodRef = useRef(false);
+  const autoSettingDataDateRef = useRef(false);
 
   const isEdit = Boolean(dataId);
 
   const getDefaultWeightPeriod = (timestamp: dayjs.Dayjs): 'morning' | 'night' | undefined => {
     const hour = timestamp.hour();
+    if (hour >= 0 && hour < 3) {
+      return 'night';
+    }
     if (hour >= 4 && hour <= 10) {
       return 'morning';
     }
@@ -81,13 +87,26 @@ export default function DataForm() {
     return undefined;
   };
 
+  const isPregnancyTemplate = template?.id === 'pregnancy-weight';
+
+  const getDefaultPregnancyDataDate = (
+    recordTimestamp: dayjs.Dayjs,
+    weightPeriod?: 'morning' | 'night'
+  ): dayjs.Dayjs => {
+    if (weightPeriod === 'night' && recordTimestamp.hour() >= 0 && recordTimestamp.hour() < 3) {
+      return recordTimestamp.subtract(1, 'day');
+    }
+    return recordTimestamp;
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       // 获取记录尺信息
       const recordResult = await request<{ data: RulerInfo & { template: Template } }>(`/rulers/${id}`);
+      const currentTemplate = recordResult.data.template;
       setRuler(recordResult.data);
-      setTemplate(recordResult.data.template);
+      setTemplate(currentTemplate);
 
       // 如果是编辑，获取数据详情
       if (dataId) {
@@ -95,26 +114,37 @@ export default function DataForm() {
 
         // 设置表单值
         const timestamp = dayjs(entryResult.data.timestamp);
+        const dataDate = entryResult.data.data_date ? dayjs(entryResult.data.data_date) : timestamp;
+        const isPregnancyRecord = currentTemplate.id === 'pregnancy-weight';
         form.setFieldsValue({
-          date: timestamp,
-          time: timestamp,
+          date: isPregnancyRecord ? undefined : timestamp,
+          time: isPregnancyRecord ? undefined : timestamp,
+          data_date: isPregnancyRecord ? dataDate : undefined,
+          record_time: isPregnancyRecord ? timestamp : undefined,
           note: entryResult.data.note,
         });
         setWeightPeriodTouched(true);
+        setDataDateTouched(true);
 
         // 设置动态字段值
-        for (const field of recordResult.data.template.fields) {
+        for (const field of currentTemplate.fields) {
           form.setFieldValue(field.key, entryResult.data.values[field.key]);
         }
       } else {
         // 新建时设置默认值
         const now = dayjs();
+        const defaultWeightPeriod = currentTemplate.id === 'pregnancy-weight' ? getDefaultWeightPeriod(now) : undefined;
         form.setFieldsValue({
           date: now,
           time: now,
-          weight_period: recordResult.data.template.id === 'pregnancy-weight' ? getDefaultWeightPeriod(now) : undefined,
+          data_date: currentTemplate.id === 'pregnancy-weight'
+            ? getDefaultPregnancyDataDate(now, defaultWeightPeriod)
+            : undefined,
+          record_time: currentTemplate.id === 'pregnancy-weight' ? now : undefined,
+          weight_period: defaultWeightPeriod,
         });
         setWeightPeriodTouched(false);
+        setDataDateTouched(false);
       }
     } catch (error) {
       message.error('加载失败');
@@ -134,10 +164,12 @@ export default function DataForm() {
       const values = await form.validateFields();
       setSaving(true);
 
-      // 组合 timestamp
-      const date = values.date.format('YYYY-MM-DD');
-      const time = values.time.format('HH:mm');
-      const timestamp = `${date} ${time}`;
+      const timestamp = isPregnancyTemplate
+        ? values.record_time.format('YYYY-MM-DD HH:mm:ss')
+        : `${values.date.format('YYYY-MM-DD')} ${values.time.format('HH:mm:ss')}`;
+      const dataDate = isPregnancyTemplate
+        ? values.data_date.format('YYYY-MM-DD')
+        : values.date.format('YYYY-MM-DD');
 
       // 组合动态字段值
       const dataValues: Record<string, number | string | null> = {};
@@ -150,6 +182,7 @@ export default function DataForm() {
       const payload = {
         record_id: parseInt(id!),
         timestamp,
+        data_date: dataDate,
         values: dataValues,
         note: values.note,
       };
@@ -278,29 +311,70 @@ export default function DataForm() {
                 }
               }
 
+              if ('data_date' in changedValues) {
+                if (autoSettingDataDateRef.current) {
+                  autoSettingDataDateRef.current = false;
+                } else {
+                  setDataDateTouched(true);
+                }
+              }
+
               if (
-                template?.id === 'pregnancy-weight' &&
-                'time' in changedValues &&
+                isPregnancyTemplate &&
+                'record_time' in changedValues &&
                 !weightPeriodTouched &&
-                allValues.time
+                allValues.record_time
               ) {
                 autoSettingWeightPeriodRef.current = true;
-                form.setFieldValue('weight_period', getDefaultWeightPeriod(allValues.time));
+                form.setFieldValue('weight_period', getDefaultWeightPeriod(allValues.record_time));
+              }
+
+              if (
+                isPregnancyTemplate &&
+                ('record_time' in changedValues || 'weight_period' in changedValues) &&
+                !dataDateTouched &&
+                allValues.record_time
+              ) {
+                autoSettingDataDateRef.current = true;
+                form.setFieldValue(
+                  'data_date',
+                  getDefaultPregnancyDataDate(allValues.record_time, allValues.weight_period)
+                );
               }
             }}
           >
-            <Row gutter={48}>
-              <Col xs={24} sm={12} lg={8}>
-                <Form.Item label="日期" name="date" rules={[{ required: true, message: '请选择日期' }]}>
-                  <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12} lg={8}>
-                <Form.Item label="时间" name="time" rules={[{ required: true, message: '请选择时间' }]}>
-                  <TimePicker style={{ width: '100%' }} format="HH:mm" />
-                </Form.Item>
-              </Col>
-            </Row>
+            {isPregnancyTemplate ? (
+              <Row gutter={48}>
+                <Col xs={24} sm={12} lg={8}>
+                  <Form.Item label="数据日期" name="data_date" rules={[{ required: true, message: '请选择数据日期' }]}>
+                    <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} lg={10}>
+                  <Form.Item
+                    label="记录时间"
+                    name="record_time"
+                    rules={[{ required: true, message: '请选择记录时间' }]}
+                    extra="凌晨 0:00-3:00 且体重类型为睡前时，数据日期默认回退到前一天"
+                  >
+                    <DatePicker style={{ width: '100%' }} showTime format="YYYY-MM-DD HH:mm:ss" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ) : (
+              <Row gutter={48}>
+                <Col xs={24} sm={12} lg={8}>
+                  <Form.Item label="日期" name="date" rules={[{ required: true, message: '请选择日期' }]}>
+                    <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} sm={12} lg={8}>
+                  <Form.Item label="时间" name="time" rules={[{ required: true, message: '请选择时间' }]}>
+                    <TimePicker style={{ width: '100%' }} format="HH:mm:ss" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            )}
 
             <Row gutter={48}>
               {template?.fields.map((field) => (
