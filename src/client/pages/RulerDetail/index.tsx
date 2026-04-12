@@ -312,6 +312,7 @@ export default function RulerDetail() {
         name: getSeriesLabel(series.field, chart),
         type: chart.type,
         smooth: chart.type === 'line',
+        connectNulls: chart.type === 'line',
         data: xAxisData.map((timestamp) => {
           const point = series.data.find((item) => item.timestamp === timestamp);
           return point?.value ?? null;
