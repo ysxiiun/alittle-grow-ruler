@@ -113,6 +113,7 @@ interface ChartData {
 }
 
 type ChartRange = 'all' | '3m' | '1m' | '1w';
+type WeightPeriodFilter = 'all' | 'morning' | 'night';
 
 export default function RulerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -128,11 +129,20 @@ export default function RulerDetail() {
   const [activeTab, setActiveTab] = useState('chart');
   const [statsExpanded, setStatsExpanded] = useState(false);
   const [chartRange, setChartRange] = useState<ChartRange>('1m');
+  const [weightPeriodFilter, setWeightPeriodFilter] = useState<WeightPeriodFilter>('all');
 
   const fieldMap = useMemo(
     () => new Map((template?.fields || []).map((field) => [field.key, field])),
     [template]
   );
+  const isPregnancyWeightTemplate = template?.id === 'pregnancy-weight';
+  const filteredEntries = useMemo(() => {
+    if (!isPregnancyWeightTemplate || weightPeriodFilter === 'all') {
+      return entries;
+    }
+
+    return entries.filter((entry) => entry.values.weight_period === weightPeriodFilter);
+  }, [entries, isPregnancyWeightTemplate, weightPeriodFilter]);
 
   const getSeriesLabel = (field: string, chart: TemplateChart): string => {
     if (field === 'weight_morning') {
@@ -222,6 +232,10 @@ export default function RulerDetail() {
       fetchData();
     }
   }, [id]);
+
+  useEffect(() => {
+    setWeightPeriodFilter('all');
+  }, [id, template?.id]);
 
   const handleDelete = async (entryId: number) => {
     try {
@@ -337,22 +351,22 @@ export default function RulerDetail() {
   const getTableColumns = () => {
     const columns: any[] = [
       {
-        title: template?.id === 'pregnancy-weight' ? '数据日期' : '时间',
-        dataIndex: template?.id === 'pregnancy-weight' ? 'data_date' : 'timestamp',
-        key: template?.id === 'pregnancy-weight' ? 'data_date' : 'timestamp',
+        title: isPregnancyWeightTemplate ? '数据日期' : '时间',
+        dataIndex: isPregnancyWeightTemplate ? 'data_date' : 'timestamp',
+        key: isPregnancyWeightTemplate ? 'data_date' : 'timestamp',
         render: (_: string, row: DataEntry) => (
-          template?.id === 'pregnancy-weight'
+          isPregnancyWeightTemplate
             ? (row.data_date || dayjs(row.timestamp).format('YYYY-MM-DD'))
             : dayjs(row.timestamp).format('YYYY-MM-DD HH:mm:ss')
         ),
         sorter: (a: DataEntry, b: DataEntry) =>
-          template?.id === 'pregnancy-weight'
+          isPregnancyWeightTemplate
             ? (a.data_date || a.timestamp.slice(0, 10)).localeCompare(b.data_date || b.timestamp.slice(0, 10))
             : new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       },
     ];
 
-    if (template?.id === 'pregnancy-weight') {
+    if (isPregnancyWeightTemplate) {
       columns.push({
         title: '记录时间',
         dataIndex: 'timestamp',
@@ -722,13 +736,28 @@ export default function RulerDetail() {
                 <Space>
                   <TableOutlined />
                   记录列表
-                  <Badge count={entries.length} showZero={false} />
+                  <Badge count={filteredEntries.length} showZero={false} />
                 </Space>
               }
               key="list"
             >
+              {isPregnancyWeightTemplate && (
+                <div style={{ marginBottom: 16, display: 'flex', justifyContent: isMobile ? 'stretch' : 'flex-end' }}>
+                  <Segmented
+                    block={isMobile}
+                    value={weightPeriodFilter}
+                    onChange={(value) => setWeightPeriodFilter(value as WeightPeriodFilter)}
+                    style={isMobile ? { width: '100%', padding: 4 } : undefined}
+                    options={[
+                      { label: '全部', value: 'all' },
+                      { label: '晨起体重', value: 'morning' },
+                      { label: '睡前体重', value: 'night' },
+                    ]}
+                  />
+                </div>
+              )}
               <Table
-                dataSource={entries}
+                dataSource={filteredEntries}
                 columns={getTableColumns()}
                 rowKey="id"
                 pagination={{ pageSize: 10, size: 'small' }}
