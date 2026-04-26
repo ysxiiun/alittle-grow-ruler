@@ -66,14 +66,21 @@ export default function DataForm() {
   const [saving, setSaving] = useState(false);
   const [ruler, setRuler] = useState<RulerInfo | null>(null);
   const [template, setTemplate] = useState<Template | null>(null);
-  const [weightPeriodTouched, setWeightPeriodTouched] = useState(Boolean(dataId));
-  const [dataDateTouched, setDataDateTouched] = useState(Boolean(dataId));
-  const autoSettingWeightPeriodRef = useRef(false);
-  const autoSettingDataDateRef = useRef(false);
+  const weightPeriodTouchedRef = useRef(Boolean(dataId));
+  const dataDateTouchedRef = useRef(Boolean(dataId));
 
   const isEdit = Boolean(dataId);
 
-  const getDefaultWeightPeriod = (timestamp: dayjs.Dayjs): 'morning' | 'night' | undefined => {
+  type WeightPeriod = 'morning' | 'night';
+
+  const normalizeWeightPeriod = (value: unknown): WeightPeriod | undefined => {
+    if (value === 'morning' || value === 'night') {
+      return value;
+    }
+    return undefined;
+  };
+
+  const getDefaultWeightPeriod = (timestamp: dayjs.Dayjs): WeightPeriod | undefined => {
     const hour = timestamp.hour();
     if (hour >= 0 && hour < 3) {
       return 'night';
@@ -91,7 +98,7 @@ export default function DataForm() {
 
   const getDefaultPregnancyDataDate = (
     recordTimestamp: dayjs.Dayjs,
-    weightPeriod?: 'morning' | 'night'
+    weightPeriod?: WeightPeriod
   ): dayjs.Dayjs => {
     if (weightPeriod === 'night' && recordTimestamp.hour() >= 0 && recordTimestamp.hour() < 3) {
       return recordTimestamp.subtract(1, 'day');
@@ -123,8 +130,8 @@ export default function DataForm() {
           record_time: isPregnancyRecord ? timestamp : undefined,
           note: entryResult.data.note,
         });
-        setWeightPeriodTouched(true);
-        setDataDateTouched(true);
+        weightPeriodTouchedRef.current = true;
+        dataDateTouchedRef.current = true;
 
         // 设置动态字段值
         for (const field of currentTemplate.fields) {
@@ -143,8 +150,8 @@ export default function DataForm() {
           record_time: currentTemplate.id === 'pregnancy-weight' ? now : undefined,
           weight_period: defaultWeightPeriod,
         });
-        setWeightPeriodTouched(false);
-        setDataDateTouched(false);
+        weightPeriodTouchedRef.current = false;
+        dataDateTouchedRef.current = false;
       }
     } catch (error) {
       message.error('加载失败');
@@ -168,7 +175,10 @@ export default function DataForm() {
         ? values.record_time.format('YYYY-MM-DD HH:mm:ss')
         : `${values.date.format('YYYY-MM-DD')} ${values.time.format('HH:mm:ss')}`;
       const dataDate = isPregnancyTemplate
-        ? values.data_date.format('YYYY-MM-DD')
+        ? (dataDateTouchedRef.current
+            ? values.data_date
+            : getDefaultPregnancyDataDate(values.record_time, normalizeWeightPeriod(values.weight_period))
+          ).format('YYYY-MM-DD')
         : values.date.format('YYYY-MM-DD');
 
       // 组合动态字段值
@@ -304,41 +314,34 @@ export default function DataForm() {
             onFinish={handleSubmit}
             onValuesChange={(changedValues, allValues) => {
               if ('weight_period' in changedValues) {
-                if (autoSettingWeightPeriodRef.current) {
-                  autoSettingWeightPeriodRef.current = false;
-                } else {
-                  setWeightPeriodTouched(true);
-                }
+                weightPeriodTouchedRef.current = true;
               }
 
               if ('data_date' in changedValues) {
-                if (autoSettingDataDateRef.current) {
-                  autoSettingDataDateRef.current = false;
-                } else {
-                  setDataDateTouched(true);
-                }
+                dataDateTouchedRef.current = true;
               }
+
+              let nextWeightPeriod = normalizeWeightPeriod(allValues.weight_period);
 
               if (
                 isPregnancyTemplate &&
                 'record_time' in changedValues &&
-                !weightPeriodTouched &&
+                !weightPeriodTouchedRef.current &&
                 allValues.record_time
               ) {
-                autoSettingWeightPeriodRef.current = true;
-                form.setFieldValue('weight_period', getDefaultWeightPeriod(allValues.record_time));
+                nextWeightPeriod = getDefaultWeightPeriod(allValues.record_time);
+                form.setFieldValue('weight_period', nextWeightPeriod);
               }
 
               if (
                 isPregnancyTemplate &&
                 ('record_time' in changedValues || 'weight_period' in changedValues) &&
-                !dataDateTouched &&
+                !dataDateTouchedRef.current &&
                 allValues.record_time
               ) {
-                autoSettingDataDateRef.current = true;
                 form.setFieldValue(
                   'data_date',
-                  getDefaultPregnancyDataDate(allValues.record_time, allValues.weight_period)
+                  getDefaultPregnancyDataDate(allValues.record_time, nextWeightPeriod)
                 );
               }
             }}
